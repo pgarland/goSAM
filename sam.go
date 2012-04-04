@@ -1,4 +1,4 @@
-// Copyright (C) 2012  Phillip Garland <pgarland@gmail.com>
+// Copyright (C) 2012 Phillip Garland <pgarland@gmail.com>
 
 // This program is free software: you can redistribute it and/or
 // modify it under the terms of the GNU Lesser General Public License
@@ -23,6 +23,7 @@ import (
 	"strings"
 	"strconv"
 	"container/list"
+	"regexp"
 )
 
 type HeaderLine struct {
@@ -30,6 +31,10 @@ type HeaderLine struct {
 	SortOrder string // SO | unknown, unsorted, queryname, coordinate | optional
 }
 
+func validateHeader(hl *HeaderLine) bool {
+	m, _ := regexp.Match("^[0-9]+.[0-9]+$", []byte(hl.Version))
+					return m
+}
 
 var hlParseMap = map[string]func(string, *HeaderLine) {
 	"VN": func(val string, hl *HeaderLine) {hl.Version = val},
@@ -59,6 +64,14 @@ type RefSeqDict struct {
 	MD5 string // M5 | optional
 	Species string // SP | optional
 	URI string // || UR | optional | use URL type?
+}
+
+func validateRefSeqDict(rsd *RefSeqDict) bool {
+	m , _ := regexp.Match("[!-)+-<>-~][!-~]*", []byte(rsd.Name))
+	if !m {
+		return false
+	}
+	return ((rsd.Length >= 1) && (rsd.Length <= 0x1FFFFFFF))
 }
 
 func parseRefSeqDict(line string) *RefSeqDict {
@@ -100,6 +113,15 @@ type ReadGroup struct {
 	Sample string // SM | optional
 }
 
+// FIXME: make sure ID is unique
+func validateReadGroup (rg *ReadGroup) bool {
+	m := true
+	if rg.FlowOrder != "" {
+		m, _ = regexp.Match("*|[ACMGRSVTWYHKDBN]+",[]byte(rg.FlowOrder))
+	}
+	return m
+}
+
 var rgParseMap = map[string]func(string, *ReadGroup) {
 	"ID": func(s string, rg *ReadGroup) {rg.ID = s},
 	"CN": func(s string, rg *ReadGroup) {rg.SeqCenter = s},
@@ -114,7 +136,6 @@ var rgParseMap = map[string]func(string, *ReadGroup) {
 	"PU": func(s string, rg *ReadGroup) {rg.Unit = s},
 	"SM": func(s string, rg *ReadGroup) {rg.Sample = s},
 }
-
 
 func parseReadGroup(line string) *ReadGroup {
 	tvs := strings.Split(line, "\t")
@@ -136,6 +157,10 @@ type Program struct {
 	Name string // PN | optional
 	CmdLine string // CL | optional
 	PrevID string // PP | must match another PG line ID | optional
+}
+
+func validateProgram(prog *Program) bool {
+	return (prog.ID != "")
 }
 
 var programParseMap = map[string]func(string, *Program) {
