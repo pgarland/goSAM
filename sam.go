@@ -323,7 +323,7 @@ func ReadSAMFile(fileName string) (*HeaderLine, *list.List, *list.List, *list.Li
 				return header, rsdl, rgl, progl, nil, err
 			} else {
 				if progIDs[prog.ID] {
-					// error
+					return header, rsdl, rgl, progl, nil, SAMerror{"Program ID is not unique"}					
 				} else {
 					progIDs[prog.ID] = true
 					progl.PushBack(prog)
