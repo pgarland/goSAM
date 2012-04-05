@@ -31,9 +31,13 @@ type HeaderLine struct {
 	SortOrder string // SO | unknown, unsorted, queryname, coordinate | optional
 }
 
-func validateHeader(hl *HeaderLine) bool {
+func validateHeader(hl *HeaderLine) (bool, error) {
 	m, _ := regexp.Match("^[0-9]+.[0-9]+$", []byte(hl.Version))
-					return m
+	if !m {
+		return m, SAMerror{"Invalid version in SAM Header"}
+	} 
+	return m, nil
+
 }
 
 var hlParseMap = map[string]func(string, *HeaderLine) {
@@ -58,7 +62,7 @@ func parseHeader(line string) *HeaderLine {
 
 // Order of SQ lines defines the alignment sorting order
 type RefSeqDict struct {
-	Name string // SN | [!-)+-<>-~][!-~]*  | required
+	Name string // SN | [!-)+-<>-~][!-~]*  | required | unique
 	Length uint32 // LN | Range: [1, 2^29 -1] | required
 	AssemblyID string // AS | optional
 	MD5 string // M5 | optional
@@ -66,12 +70,13 @@ type RefSeqDict struct {
 	URI string // || UR | optional | use URL type?
 }
 
-func validateRefSeqDict(rsd *RefSeqDict) bool {
+func validateRefSeqDict(rsd *RefSeqDict) (bool, error) {
 	m , _ := regexp.Match("[!-)+-<>-~][!-~]*", []byte(rsd.Name))
 	if !m {
-		return false
+		return false, SAMerror{"Invalid reference sequence name"}
 	}
-	return ((rsd.Length >= 1) && (rsd.Length <= 0x1FFFFFFF))
+
+	return ((rsd.Length >= 1) && (rsd.Length <= 0x1FFFFFFF)), nil
 }
 
 func parseRefSeqDict(line string) *RefSeqDict {
@@ -113,13 +118,36 @@ type ReadGroup struct {
 	Sample string // SM | optional
 }
 
+// The usefulness of checking platforms seems dubious to me. What
+// happens as new platforms come into use. I may skip checking this if
+// it causes problems.
+var validPlatforms = map[string]bool{
+	"CAPILLARY": true,
+	"LS454": true,
+	"ILLUMINA": true,
+	"SOLID": true, 
+	"HELICOS": true, 
+	"IONTORRENT": true,
+	"PACBIO": true,
+}
+
 // FIXME: make sure ID is unique
-func validateReadGroup (rg *ReadGroup) bool {
+func validateReadGroup (rg *ReadGroup) (bool, error) {
 	m := true
+	// FlowOrder is optional, so we have to check it's existence
+	// first, though I guess I could just include the empty string as
+	// an alternative in the match.
 	if rg.FlowOrder != "" {
 		m, _ = regexp.Match("*|[ACMGRSVTWYHKDBN]+",[]byte(rg.FlowOrder))
+		if !m {
+			return false, SAMerror{"Invalid flow order in read group"}
+		}
 	}
-	return m
+	if rg.Platform != "" {
+		m = validPlatforms[rg.Platform]
+		if !m {return false, SAMerror{"Invalid platform in read group"}}
+	}
+	return true, nil
 }
 
 var rgParseMap = map[string]func(string, *ReadGroup) {
@@ -159,8 +187,9 @@ type Program struct {
 	PrevID string // PP | must match another PG line ID | optional
 }
 
-func validateProgram(prog *Program) bool {
-	return (prog.ID != "")
+func validateProgram(prog *Program) (bool, error) {
+	if prog.ID == "" {return false, SAMerror{"Program ID is required"}}
+	return true, nil
 }
 
 var programParseMap = map[string]func(string, *Program) {
@@ -231,6 +260,15 @@ func parseAlignment(line string) *Alignment {
 	return &alignment
 }
 
+type SAMerror struct {
+	str string
+}
+
+func (e SAMerror) Error() string {
+	return fmt.Sprintf("sam: %s", e.str)
+}
+
+
 func ReadSAMFile(fileName string) (*HeaderLine, *list.List, *list.List, *list.List, *list.List, error) {
 	file, err := os.Open(fileName);
 	if err != nil {
@@ -244,20 +282,53 @@ func ReadSAMFile(fileName string) (*HeaderLine, *list.List, *list.List, *list.Li
 	var header *HeaderLine
 	var rsdl, rgl, progl, al = list.New(), list.New(), list.New(), list.New()
 
+	// Maps to keep track of values that must be unique. Used for checking for duplicate values.
+	var rsdNames, rgIDs, progIDs = map[string]bool{},  map[string]bool{}, map[string]bool{}
+
 	for line, _, err := reader.ReadLine(); err == nil;  line, _, err = reader.ReadLine() {
 		s := string(line)
 		switch lineTag := s[1:3]; lineTag {
 		case "HD": 		
 			header = parseHeader(s)
+			if valid, err := validateHeader(header); valid {
+					return nil, nil, nil, nil, nil, err
+			}
 		case "SQ":
-			refSeqDict := parseRefSeqDict(s)
-			rsdl.PushBack(refSeqDict)
+			rsd := parseRefSeqDict(s)
+			if valid, err := validateRefSeqDict(rsd); valid {
+				return  header, nil, nil, nil, nil, err
+			} else { 		
+				if rsdNames[rsd.Name] { // Make sure name is unique
+					return  header, rsdl, nil, nil, nil, SAMerror{"Reference sequence name is not unique"}
+				} else { // Everything is OK
+					rsdNames[rsd.Name] = true
+					rsdl.PushBack(rsd)
+				}
+			}
 		case "RG":
 			rg := parseReadGroup(s)
-			rgl.PushBack(rg)
+			if valid, err := validateReadGroup(rg); valid {
+				return header, rsdl, rgl, nil, nil, err
+			} else {
+				if rgIDs[rg.ID] {
+					return  header, rsdl, rgl, nil, nil, SAMerror{"Read group name is not unique"}
+				} else {
+					rgIDs[rg.ID] = true
+					rgl.PushBack(rg)
+				}
+			}
 		case "PG":
 			prog := parseProgram(s)
-			progl.PushBack(prog)
+			if valid, err := validateProgram(prog); valid {
+				return header, rsdl, rgl, progl, nil, err
+			} else {
+				if progIDs[prog.ID] {
+					// error
+				} else {
+					progIDs[prog.ID] = true
+					progl.PushBack(prog)
+				}
+			}
 		case "CO":
 		default:
 			a := parseAlignment(s)
