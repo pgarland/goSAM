@@ -291,7 +291,7 @@ func ReadSAMFile(fileName string) (*HeaderLine, *list.List, *list.List, *list.Li
 		case "HD": 		
 			header = parseHeader(s)
 			if valid, err := validateHeader(header); valid {
-					return nil, nil, nil, nil, nil, err
+					return header, nil, nil, nil, nil, err
 			}
 		case "SQ":
 			rsd := parseRefSeqDict(s)
