@@ -285,6 +285,9 @@ func ReadSAMFile(fileName string) (*HeaderLine, *list.List, *list.List, *list.Li
 	// Maps to keep track of values that must be unique. Used for checking for duplicate values.
 	var rsdNames, rgIDs, progIDs = map[string]bool{},  map[string]bool{}, map[string]bool{}
 
+	// separating the cases into separate handler functions doesn't
+	// seem to win much, so I'm leaving this as it is for now, though
+	// it is longer than I'd like.
 	for line, _, err := reader.ReadLine(); err == nil;  line, _, err = reader.ReadLine() {
 		s := string(line)
 		switch lineTag := s[1:3]; lineTag {
