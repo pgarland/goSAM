@@ -331,12 +331,12 @@ func ReadSAMFile(fileName string) (*HeaderLine, *list.List, *list.List, *list.Li
 		switch lineTag := s[1:3]; lineTag {
 		case "HD": 		
 			header = parseHeader(s)
-			if valid, err := validateHeader(header); valid {
+			if valid, err := validateHeader(header); !valid {
 					return header, nil, nil, nil, nil, err
 			}
 		case "SQ":
 			rsd := parseRefSeqDict(s)
-			if valid, err := validateRefSeqDict(rsd); valid {
+			if valid, err := validateRefSeqDict(rsd); !valid {
 				return  header, nil, nil, nil, nil, err
 			} else { 		
 				if rsdNames[rsd.Name] { // Make sure name is unique
@@ -348,7 +348,7 @@ func ReadSAMFile(fileName string) (*HeaderLine, *list.List, *list.List, *list.Li
 			}
 		case "RG":
 			rg := parseReadGroup(s)
-			if valid, err := validateReadGroup(rg); valid {
+			if valid, err := validateReadGroup(rg); !valid {
 				return header, rsdl, rgl, nil, nil, err
 			} else {
 				if rgIDs[rg.ID] {
@@ -360,7 +360,7 @@ func ReadSAMFile(fileName string) (*HeaderLine, *list.List, *list.List, *list.Li
 			}
 		case "PG":
 			prog := parseProgram(s)
-			if valid, err := validateProgram(prog); valid {
+			if valid, err := validateProgram(prog); !valid {
 				return header, rsdl, rgl, progl, nil, err
 			} else {
 				if progIDs[prog.ID] {
