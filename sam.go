@@ -266,6 +266,7 @@ func validateAlignment(a *Alignment) (bool, error){
 	}	
 	return true, nil
 }
+
 func parseAlignment(line string) *Alignment {
 	fields := strings.Split(line, "\t")
 
@@ -296,6 +297,21 @@ func parseAlignment(line string) *Alignment {
 	alignment.Qual = fields[10]
 
 	return &alignment
+}
+
+func bitIsSet(bit uint8, bitmap uint16) {
+		if (bitmap & bit) == bit {
+		return true
+	}
+	return false
+}
+
+func hasMultipleSegments(a *Alignment) bool {
+	return bitIsSet(0x01, a.Flag)
+}
+
+func segmentIsUnmapped(a *Alignment) bool {
+	return bitIsSet(0x04, a.Flag)
 }
 
 type SAMerror struct {
