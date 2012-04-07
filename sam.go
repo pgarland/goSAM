@@ -228,6 +228,44 @@ type Alignment struct {
 	Qual string // required ASCII Phred score+33
 }
 
+// FIXME: These regexp patterns should be compiled, since they'll be
+// used over and over
+func validateAlignment(a *Alignment) (bool, error){
+	if m, _ := regexp.Match("*|[!-?A-~]+", []byte(a.Qname)); !m {
+		return false, SAMerror{"Invalid qname in alignment"}
+	}
+	if (a.Flag < 0 || a.Flag > 0xFFFF) {
+		return false, SAMerror{"Invalid flag in alignment"}
+	}
+	if m, _ := regexp.Match("*|[!-()+-<>-~][!-~]*", []byte(a.RefName)); !m {
+		return false, SAMerror{"Invalid reference sequence name in alignment"}
+	}
+	if a.Pos < 0 || a.Pos > 0x1FFFFFFF {
+		return false, SAMerror{"Alignment mapping position out of valid range"}
+	}
+	if a.Mapq < 0 || a.Mapq > 0xFF {
+		return false, SAMerror{"Alignment mapping quality out of valid range"}
+	}
+	if m, _ := regexp.Match("*|([0-9]+[MIDNSHPX=])+", []byte(a.Cigar)); !m {	
+		return false, SAMerror{"Invalid CIGAR string in alignment"}
+	}
+	if m, _ := regexp.Match("*|=|[!-()+-<>-~][!-~]*", []byte(a.NextRef)); !m {
+		return false, SAMerror{"Invalid next reference name in alignment"}
+	}
+	if a.NextPos < 0 || a.NextPos > 0x1FFFFFFF {
+		return false, SAMerror{"Alignment mapping position out of valid range"}
+	}
+	if a.TemplateLen < -0x1FFFFFFF || a.TemplateLen > 0x1FFFFFFF {
+		return false, SAMerror{"Invalid template length"}
+	}
+	if m, _ := regexp.Match("*|[A-Za-z=.]+",[]byte(a.Seq)); !m {
+		return false, SAMerror{"Invalid sequence in alignment"}
+	}
+	if m, _ := regexp.Match("*|[!-~]+",[]byte(a.Qual)); !m {
+		return false, SAMerror{"Invalie Phred quality in alignment"}
+	}	
+	return true, nil
+}
 func parseAlignment(line string) *Alignment {
 	fields := strings.Split(line, "\t")
 
@@ -326,16 +364,24 @@ func ReadSAMFile(fileName string) (*HeaderLine, *list.List, *list.List, *list.Li
 				return header, rsdl, rgl, progl, nil, err
 			} else {
 				if progIDs[prog.ID] {
-					return header, rsdl, rgl, progl, nil, SAMerror{"Program ID is not unique"}					
+					return header, rsdl, rgl, progl, nil, SAMerror{"Program ID is not unique"}
 				} else {
 					progIDs[prog.ID] = true
 					progl.PushBack(prog)
 				}
 			}
 		case "CO":
-		default:
+			// FIXME: It should be possible for the QNAME field of an
+			// alignment to have "HD", "SQ", "RG", "PG", or "CO" as
+			// characters 1 and 2, so making alignment the default
+			// lone type is not right.
+		default: 
 			a := parseAlignment(s)
-			al.PushBack(a)
+			if valid, err := validateAlignment(a); !valid {
+				return header, rsdl, rgl, progl, al , err
+			} else {
+				al.PushBack(a)
+			}
 		}
 	}
 
